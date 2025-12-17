@@ -344,15 +344,9 @@
             showInputStatus('userIdStatus', 'Memeriksa user...', 'status-checking');
             
             try {
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        action: 'checkUser',
-                        userId: userId
-                    })
+                const response = await fetch(
+  `${APPS_SCRIPT_URL}?action=login&userId=${encodeURIComponent(userId)}&password=${encodeURIComponent(password)}`
+);
                 });
                 
                 const result = await response.json();
@@ -377,16 +371,9 @@
             updateProgressSteps(3);
             
             try {
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        action: 'checkLink',
-                        userId: userId
-                    })
-                });
+                const response = await fetch(
+  `${APPS_SCRIPT_URL}?action=login&userId=${encodeURIComponent(userId)}&password=${encodeURIComponent(password)}`
+);
                 
                 const result = await response.json();
                 
@@ -645,3 +632,4 @@
     </script>
 </body>
 </html>
+
