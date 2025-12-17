@@ -296,340 +296,399 @@
     </div>
 
     <script>
-        // Ganti dengan URL Google Apps Script Anda
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9StpraMJgVsckIW1eaf5kFym-FJmMX4E4CS-q6xE1l2A7FL4yjVSaeV73JkNvVlA/exec';
-        const REMEMBER_DAYS = 90;
+    // Ganti dengan URL Google Apps Script Anda
+    const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx9StpraMJgVsckIW1eaf5kFym-FJmMX4E4CS-q6xE1l2A7FL4yjVSaeV73JkNvVlA/exec';
+    const REMEMBER_DAYS = 90;
+    
+    // Cache untuk menyimpan hasil validasi
+    let validationCache = {
+        userExists: null,
+        passwordCorrect: null,
+        linkExists: null
+    };
+    
+    // ================== FUNGSI JSONP ==================
+    function makeJSONPRequest(params) {
+        return new Promise((resolve, reject) => {
+            // Buat nama callback unik
+            const callbackName = 'jsonp_callback_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
+            // Setup parameter
+            const urlParams = new URLSearchParams(params);
+            urlParams.append('callback', callbackName);
+            
+            // Buat URL lengkap
+            const url = `${APPS_SCRIPT_URL}?${urlParams.toString()}`;
+            
+            // Buat script element
+            const script = document.createElement('script');
+            script.src = url;
+            script.type = 'application/javascript';
+            
+            // Setup timeout (10 detik)
+            const timeoutId = setTimeout(() => {
+                cleanup();
+                reject(new Error('Request timeout (10 seconds)'));
+            }, 10000);
+            
+            // Fungsi cleanup
+            function cleanup() {
+                clearTimeout(timeoutId);
+                delete window[callbackName];
+                if (script.parentNode) {
+                    script.parentNode.removeChild(script);
+                }
+            }
+            
+            // Setup callback function
+            window[callbackName] = function(response) {
+                cleanup();
+                resolve(response);
+            };
+            
+            // Handle error
+            script.onerror = function() {
+                cleanup();
+                reject(new Error('JSONP request failed'));
+            };
+            
+            // Tambahkan script ke document
+            document.head.appendChild(script);
+        });
+    }
+    
+    // ================== FUNGSI UTAMA ==================
+    
+    // Fungsi untuk menampilkan status input
+    function showInputStatus(elementId, message, type = '') {
+        const element = document.getElementById(elementId);
+        element.innerHTML = message ? 
+            `<span class="status-icon ${type}">${getStatusIcon(type)}</span> ${message}` : 
+            '';
+        element.className = `input-status ${type}`;
+    }
+    
+    function getStatusIcon(type) {
+        switch(type) {
+            case 'status-valid': return '✅';
+            case 'status-invalid': return '❌';
+            case 'status-checking': return '⏳';
+            default: return '';
+        }
+    }
+    
+    // Fungsi untuk update progress steps
+    function updateProgressSteps(step) {
+        const steps = document.querySelectorAll('.step');
+        steps.forEach((s, index) => {
+            s.classList.remove('active', 'completed');
+            if (index + 1 < step) {
+                s.classList.add('completed');
+            } else if (index + 1 === step) {
+                s.classList.add('active');
+            }
+        });
+    }
+    
+    // Fungsi 1: Cek apakah user ada
+    async function checkUserExists(userId) {
+        updateProgressSteps(1);
+        showInputStatus('userIdStatus', 'Memeriksa user...', 'status-checking');
         
-        // Cache untuk menyimpan hasil validasi
-        let validationCache = {
+        try {
+            const result = await makeJSONPRequest({
+                action: 'checkUser',
+                userId: userId
+            });
+            
+            if (result.success) {
+                validationCache.userExists = true;
+                showInputStatus('userIdStatus', '✓ User ditemukan', 'status-valid');
+                return result.data;
+            } else {
+                validationCache.userExists = false;
+                showInputStatus('userIdStatus', result.message, 'status-invalid');
+                return null;
+            }
+        } catch (error) {
+            showInputStatus('userIdStatus', 'Gagal memeriksa user', 'status-invalid');
+            return null;
+        }
+    }
+    
+    // Fungsi 2: Cek link user
+    async function checkUserLink(userId) {
+        updateProgressSteps(3);
+        
+        try {
+            const result = await makeJSONPRequest({
+                action: 'checkLink',
+                userId: userId
+            });
+            
+            if (result.success && result.data.link) {
+                validationCache.linkExists = true;
+                return result.data;
+            } else {
+                validationCache.linkExists = false;
+                return result;
+            }
+        } catch (error) {
+            validationCache.linkExists = false;
+            return null;
+        }
+    }
+    
+    // Fungsi untuk menampilkan hasil validasi
+    function showValidationResults(results) {
+        const container = document.getElementById('validationResults');
+        container.innerHTML = '';
+        
+        if (!results) return;
+        
+        // Tambahkan hasil validasi
+        const items = [];
+        
+        // Validasi 1: User exists
+        items.push({
+            icon: validationCache.userExists ? '✅' : '❌',
+            text: validationCache.userExists ? 'User ditemukan di database' : 'User tidak ditemukan',
+            type: validationCache.userExists ? 'validation-success' : 'validation-error'
+        });
+        
+        // Validasi 2: Password correct
+        if (validationCache.userExists !== null) {
+            items.push({
+                icon: validationCache.passwordCorrect ? '✅' : '❌',
+                text: validationCache.passwordCorrect ? 'Password benar' : 'Password salah',
+                type: validationCache.passwordCorrect ? 'validation-success' : 'validation-error'
+            });
+        }
+        
+        // Validasi 3: Link exists
+        if (validationCache.userExists && validationCache.passwordCorrect !== null) {
+            items.push({
+                icon: validationCache.linkExists ? '✅' : '❌',
+                text: validationCache.linkExists ? 'Link tersedia' : 'Link tidak tersedia',
+                type: validationCache.linkExists ? 'validation-success' : 'validation-error'
+            });
+        }
+        
+        // Render items
+        items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = `validation-item ${item.type}`;
+            div.innerHTML = `
+                <span class="validation-icon">${item.icon}</span>
+                <span>${item.text}</span>
+            `;
+            container.appendChild(div);
+        });
+        
+        container.classList.add('show');
+    }
+    
+    // Fungsi untuk menampilkan pesan
+    function showMessage(text, type) {
+        const messageDiv = document.getElementById('message');
+        messageDiv.innerHTML = text;
+        messageDiv.className = `message ${type} show`;
+        
+        // Auto hide setelah 5 detik untuk error
+        if (type === 'error') {
+            setTimeout(() => {
+                messageDiv.classList.remove('show');
+            }, 5000);
+        }
+    }
+    
+    // Cookie functions
+    function setCookie(name, value, days) {
+        let expires = "";
+        if (days) {
+            const date = new Date();
+            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+            expires = "; expires=" + date.toUTCString();
+        }
+        document.cookie = name + "=" + encodeURIComponent(value) + expires + "; path=/";
+    }
+    
+    function getCookie(name) {
+        const nameEQ = name + "=";
+        const ca = document.cookie.split(';');
+        for(let i = 0; i < ca.length; i++) {
+            let c = ca[i].trim();
+            if (c.indexOf(nameEQ) === 0) {
+                return decodeURIComponent(c.substring(nameEQ.length));
+            }
+        }
+        return null;
+    }
+    
+    // Validasi real-time saat user mengetik
+    let checkUserTimeout;
+    document.getElementById('userId').addEventListener('input', function(e) {
+        const userId = e.target.value.trim();
+        
+        // Clear timeout sebelumnya
+        clearTimeout(checkUserTimeout);
+        
+        // Set timeout untuk debounce
+        if (userId.length >= 3) {
+            checkUserTimeout = setTimeout(() => {
+                checkUserExists(userId);
+            }, 500);
+        } else {
+            showInputStatus('userIdStatus', '', '');
+        }
+    });
+    
+    // Handle form submission
+    document.getElementById('loginForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const userId = document.getElementById('userId').value.trim();
+        const password = document.getElementById('password').value.trim();
+        const rememberMe = document.getElementById('rememberMe').checked;
+        const loading = document.getElementById('loading');
+        const btnSubmit = document.getElementById('btnSubmit');
+        
+        // Reset validasi
+        validationCache = {
             userExists: null,
             passwordCorrect: null,
             linkExists: null
         };
         
-        // Fungsi untuk menampilkan status input
-        function showInputStatus(elementId, message, type = '') {
-            const element = document.getElementById(elementId);
-            element.innerHTML = message ? 
-                `<span class="status-icon ${type}">${getStatusIcon(type)}</span> ${message}` : 
-                '';
-            element.className = `input-status ${type}`;
+        // Validasi input kosong
+        if (!userId) {
+            showMessage('ID pengguna tidak boleh kosong', 'error');
+            showInputStatus('userIdStatus', 'ID pengguna wajib diisi', 'status-invalid');
+            return;
         }
         
-        function getStatusIcon(type) {
-            switch(type) {
-                case 'status-valid': return '✅';
-                case 'status-invalid': return '❌';
-                case 'status-checking': return '⏳';
-                default: return '';
-            }
+        if (!password) {
+            showMessage('Password tidak boleh kosong', 'error');
+            showInputStatus('passwordStatus', 'Password wajib diisi', 'status-invalid');
+            return;
         }
         
-        // Fungsi untuk update progress steps
-        function updateProgressSteps(step) {
-            const steps = document.querySelectorAll('.step');
-            steps.forEach((s, index) => {
-                s.classList.remove('active', 'completed');
-                if (index + 1 < step) {
-                    s.classList.add('completed');
-                } else if (index + 1 === step) {
-                    s.classList.add('active');
-                }
-            });
-        }
+        // Tampilkan loading
+        loading.style.display = 'block';
+        btnSubmit.disabled = true;
         
-        // Fungsi 1: Cek apakah user ada
-        async function checkUserExists(userId) {
+        try {
+            // Step 1: Cek user
             updateProgressSteps(1);
-            showInputStatus('userIdStatus', 'Memeriksa user...', 'status-checking');
+            const userCheck = await checkUserExists(userId);
             
-            try {
-                const response = await fetch(
-  `${APPS_SCRIPT_URL}?action=login&userId=${encodeURIComponent(userId)}&password=${encodeURIComponent(password)}`
-);
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    validationCache.userExists = true;
-                    showInputStatus('userIdStatus', '✓ User ditemukan', 'status-valid');
-                    return result.data;
-                } else {
-                    validationCache.userExists = false;
-                    showInputStatus('userIdStatus', result.message, 'status-invalid');
-                    return null;
-                }
-            } catch (error) {
-                showInputStatus('userIdStatus', 'Gagal memeriksa user', 'status-invalid');
-                return null;
-            }
-        }
-        
-        // Fungsi 2: Cek link user
-        async function checkUserLink(userId) {
-            updateProgressSteps(3);
-            
-            try {
-                const response = await fetch(
-  `${APPS_SCRIPT_URL}?action=login&userId=${encodeURIComponent(userId)}&password=${encodeURIComponent(password)}`
-);
-                
-                const result = await response.json();
-                
-                if (result.success && result.data.link) {
-                    validationCache.linkExists = true;
-                    return result.data;
-                } else {
-                    validationCache.linkExists = false;
-                    return result;
-                }
-            } catch (error) {
-                validationCache.linkExists = false;
-                return null;
-            }
-        }
-        
-        // Fungsi untuk menampilkan hasil validasi
-        function showValidationResults(results) {
-            const container = document.getElementById('validationResults');
-            container.innerHTML = '';
-            
-            if (!results) return;
-            
-            // Tambahkan hasil validasi
-            const items = [];
-            
-            // Validasi 1: User exists
-            items.push({
-                icon: validationCache.userExists ? '✅' : '❌',
-                text: validationCache.userExists ? 'User ditemukan di database' : 'User tidak ditemukan',
-                type: validationCache.userExists ? 'validation-success' : 'validation-error'
-            });
-            
-            // Validasi 2: Password correct
-            if (validationCache.userExists !== null) {
-                items.push({
-                    icon: validationCache.passwordCorrect ? '✅' : '❌',
-                    text: validationCache.passwordCorrect ? 'Password benar' : 'Password salah',
-                    type: validationCache.passwordCorrect ? 'validation-success' : 'validation-error'
-                });
-            }
-            
-            // Validasi 3: Link exists
-            if (validationCache.userExists && validationCache.passwordCorrect !== null) {
-                items.push({
-                    icon: validationCache.linkExists ? '✅' : '❌',
-                    text: validationCache.linkExists ? 'Link tersedia' : 'Link tidak tersedia',
-                    type: validationCache.linkExists ? 'validation-success' : 'validation-error'
-                });
-            }
-            
-            // Render items
-            items.forEach(item => {
-                const div = document.createElement('div');
-                div.className = `validation-item ${item.type}`;
-                div.innerHTML = `
-                    <span class="validation-icon">${item.icon}</span>
-                    <span>${item.text}</span>
-                `;
-                container.appendChild(div);
-            });
-            
-            container.classList.add('show');
-        }
-        
-        // Fungsi untuk menampilkan pesan
-        function showMessage(text, type) {
-            const messageDiv = document.getElementById('message');
-            messageDiv.innerHTML = text;
-            messageDiv.className = `message ${type} show`;
-            
-            // Auto hide setelah 5 detik untuk error
-            if (type === 'error') {
-                setTimeout(() => {
-                    messageDiv.classList.remove('show');
-                }, 5000);
-            }
-        }
-        
-        // Cookie functions (sama seperti sebelumnya)
-        function setCookie(name, value, days) {
-            let expires = "";
-            if (days) {
-                const date = new Date();
-                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-                expires = "; expires=" + date.toUTCString();
-            }
-            document.cookie = name + "=" + encodeURIComponent(value) + expires + "; path=/";
-        }
-        
-        function getCookie(name) {
-            const nameEQ = name + "=";
-            const ca = document.cookie.split(';');
-            for(let i = 0; i < ca.length; i++) {
-                let c = ca[i].trim();
-                if (c.indexOf(nameEQ) === 0) {
-                    return decodeURIComponent(c.substring(nameEQ.length));
-                }
-            }
-            return null;
-        }
-        
-        // Validasi real-time saat user mengetik
-        let checkUserTimeout;
-        document.getElementById('userId').addEventListener('input', function(e) {
-            const userId = e.target.value.trim();
-            
-            // Clear timeout sebelumnya
-            clearTimeout(checkUserTimeout);
-            
-            // Set timeout untuk debounce
-            if (userId.length >= 3) {
-                checkUserTimeout = setTimeout(() => {
-                    checkUserExists(userId);
-                }, 500);
-            } else {
-                showInputStatus('userIdStatus', '', '');
-            }
-        });
-        
-        // Handle form submission
-        document.getElementById('loginForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const userId = document.getElementById('userId').value.trim();
-            const password = document.getElementById('password').value.trim();
-            const rememberMe = document.getElementById('rememberMe').checked;
-            const loading = document.getElementById('loading');
-            const btnSubmit = document.getElementById('btnSubmit');
-            
-            // Reset validasi
-            validationCache = {
-                userExists: null,
-                passwordCorrect: null,
-                linkExists: null
-            };
-            
-            // Validasi input kosong
-            if (!userId) {
-                showMessage('ID pengguna tidak boleh kosong', 'error');
-                showInputStatus('userIdStatus', 'ID pengguna wajib diisi', 'status-invalid');
-                return;
-            }
-            
-            if (!password) {
-                showMessage('Password tidak boleh kosong', 'error');
-                showInputStatus('passwordStatus', 'Password wajib diisi', 'status-invalid');
-                return;
-            }
-            
-            // Tampilkan loading
-            loading.style.display = 'block';
-            btnSubmit.disabled = true;
-            
-            try {
-                // Step 1: Cek user
-                updateProgressSteps(1);
-                const userCheck = await checkUserExists(userId);
-                
-                if (!userCheck || !validationCache.userExists) {
-                    showMessage('User tidak ditemukan. Periksa ID pengguna Anda.', 'error');
-                    showValidationResults();
-                    loading.style.display = 'none';
-                    btnSubmit.disabled = false;
-                    return;
-                }
-                
-                // Step 2: Login dengan password
-                updateProgressSteps(2);
-                showInputStatus('passwordStatus', 'Memverifikasi password...', 'status-checking');
-                
-                const loginResponse = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        action: 'login',
-                        userId: userId,
-                        password: password
-                    })
-                });
-                
-                const loginResult = await loginResponse.json();
-                
-                // Tampilkan semua hasil validasi
-                showValidationResults(loginResult.data?.validations);
-                
-                if (loginResult.success) {
-                    // Step 3: Semua validasi berhasil
-                    updateProgressSteps(3);
-                    validationCache.passwordCorrect = true;
-                    validationCache.linkExists = true;
-                    
-                    showInputStatus('passwordStatus', '✓ Password benar', 'status-valid');
-                    showMessage(loginResult.message, 'success');
-                    
-                    // Save credentials if remember me
-                    if (rememberMe) {
-                        // Enkripsi sederhana
-                        const encryptedPassword = btoa(unescape(encodeURIComponent(password)));
-                        setCookie('savedUserId', userId, REMEMBER_DAYS);
-                        setCookie('savedPassword', encryptedPassword, REMEMBER_DAYS);
-                        setCookie('autoLogin', 'true', REMEMBER_DAYS);
-                    }
-                    
-                    // Tunggu 2 detik sebelum redirect
-                    setTimeout(() => {
-                        window.location.href = loginResult.data.link;
-                    }, 2000);
-                    
-                } else {
-                    // Tentukan jenis error
-                    validationCache.passwordCorrect = loginResult.data?.validations?.passwordCorrect || false;
-                    validationCache.linkExists = loginResult.data?.validations?.linkExists || false;
-                    
-                    if (validationCache.userExists && !validationCache.passwordCorrect) {
-                        showInputStatus('passwordStatus', '✗ Password salah', 'status-invalid');
-                        showMessage('Password yang Anda masukkan salah.', 'error');
-                    } else if (validationCache.userExists && validationCache.passwordCorrect && !validationCache.linkExists) {
-                        showMessage('User valid tetapi link tidak tersedia. Hubungi administrator.', 'error');
-                    } else {
-                        showMessage(loginResult.message || 'Login gagal.', 'error');
-                    }
-                }
-                
-            } catch (error) {
-                console.error('Login error:', error);
-                showMessage('Terjadi kesalahan sistem. Silakan coba lagi.', 'error');
-            } finally {
+            if (!userCheck || !validationCache.userExists) {
+                showMessage('User tidak ditemukan. Periksa ID pengguna Anda.', 'error');
+                showValidationResults();
                 loading.style.display = 'none';
                 btnSubmit.disabled = false;
+                return;
             }
-        });
-        
-        // Load saved credentials on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            const savedUserId = getCookie('savedUserId');
-            const savedPassword = getCookie('savedPassword');
             
-            if (savedUserId && savedPassword) {
-                try {
-                    const decryptedPassword = decodeURIComponent(escape(atob(savedPassword)));
-                    document.getElementById('userId').value = savedUserId;
-                    document.getElementById('password').value = decryptedPassword;
-                    
-                    // Auto-check user existence
-                    setTimeout(() => {
-                        checkUserExists(savedUserId);
-                    }, 1000);
-                } catch (e) {
-                    console.error('Error loading saved credentials:', e);
+            // Step 2: Login dengan password
+            updateProgressSteps(2);
+            showInputStatus('passwordStatus', 'Memverifikasi password...', 'status-checking');
+            
+            const loginResult = await makeJSONPRequest({
+                action: 'login',
+                userId: userId,
+                password: password
+            });
+            
+            // Tampilkan semua hasil validasi
+            showValidationResults(loginResult.data?.validations);
+            
+            if (loginResult.success) {
+                // Step 3: Semua validasi berhasil
+                updateProgressSteps(3);
+                validationCache.passwordCorrect = true;
+                validationCache.linkExists = true;
+                
+                showInputStatus('passwordStatus', '✓ Password benar', 'status-valid');
+                showMessage(loginResult.message, 'success');
+                
+                // Save credentials if remember me
+                if (rememberMe) {
+                    // Enkripsi sederhana
+                    const encryptedPassword = btoa(unescape(encodeURIComponent(password)));
+                    setCookie('savedUserId', userId, REMEMBER_DAYS);
+                    setCookie('savedPassword', encryptedPassword, REMEMBER_DAYS);
+                    setCookie('autoLogin', 'true', REMEMBER_DAYS);
+                }
+                
+                // Tunggu 2 detik sebelum redirect
+                setTimeout(() => {
+                    if (loginResult.data && loginResult.data.link) {
+                        window.location.href = loginResult.data.link;
+                    } else {
+                        showMessage('Error: Link tidak ditemukan', 'error');
+                    }
+                }, 2000);
+                
+            } else {
+                // Tentukan jenis error
+                validationCache.passwordCorrect = loginResult.data?.validations?.passwordCorrect || false;
+                validationCache.linkExists = loginResult.data?.validations?.linkExists || false;
+                
+                if (validationCache.userExists && !validationCache.passwordCorrect) {
+                    showInputStatus('passwordStatus', '✗ Password salah', 'status-invalid');
+                    showMessage('Password yang Anda masukkan salah.', 'error');
+                } else if (validationCache.userExists && validationCache.passwordCorrect && !validationCache.linkExists) {
+                    showMessage('User valid tetapi link tidak tersedia. Hubungi administrator.', 'error');
+                } else {
+                    showMessage(loginResult.message || 'Login gagal.', 'error');
                 }
             }
-        });
-    </script>
+            
+        } catch (error) {
+            console.error('Login error:', error);
+            showMessage('Terjadi kesalahan sistem. Silakan coba lagi.', 'error');
+        } finally {
+            loading.style.display = 'none';
+            btnSubmit.disabled = false;
+        }
+    });
+    
+    // Load saved credentials on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        const savedUserId = getCookie('savedUserId');
+        const savedPassword = getCookie('savedPassword');
+        
+        if (savedUserId && savedPassword) {
+            try {
+                const decryptedPassword = decodeURIComponent(escape(atob(savedPassword)));
+                document.getElementById('userId').value = savedUserId;
+                document.getElementById('password').value = decryptedPassword;
+                
+                // Auto-check user existence
+                setTimeout(() => {
+                    checkUserExists(savedUserId);
+                }, 1000);
+            } catch (e) {
+                console.error('Error loading saved credentials:', e);
+            }
+        }
+        
+        // Test koneksi ke API
+        setTimeout(async () => {
+            try {
+                const testResult = await makeJSONPRequest({
+                    action: 'test'
+                });
+                console.log('API Test Result:', testResult);
+            } catch (error) {
+                console.warn('API Test Failed:', error);
+                showMessage('⚠️ Koneksi ke server sedang bermasalah', 'info');
+            }
+        }, 500);
+    });
+</script>
 </body>
 </html>
+
 
